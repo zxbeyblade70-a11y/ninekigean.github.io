@@ -1,0 +1,379 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { Download, Upload, Plus, Trash2, Edit2, Save, X, Palette, Type } from 'lucide-react';
+
+export default function NoteApp() {
+  useEffect(() => {
+    const link = document.createElement('link');
+    link.href = 'https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap';
+    link.rel = 'stylesheet';
+    document.head.appendChild(link);
+  }, []);
+  const [notes, setNotes] = useState([]);
+  const [selectedNote, setSelectedNote] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [drawColor, setDrawColor] = useState('#000000');
+  const [drawSize, setDrawSize] = useState(3);
+  const [isTextMode, setIsTextMode] = useState(true);
+  
+  const canvasRef = useRef(null);
+  const contextRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (canvasRef.current && selectedNote && !isTextMode) {
+      const canvas = canvasRef.current;
+      const context = canvas.getContext('2d');
+      context.lineCap = 'round';
+      context.lineJoin = 'round';
+      contextRef.current = context;
+
+      if (selectedNote.drawing) {
+        const img = new Image();
+        img.onload = () => {
+          context.drawImage(img, 0, 0);
+        };
+        img.src = selectedNote.drawing;
+      }
+    }
+  }, [selectedNote, isTextMode]);
+
+  const formatDateTime = (date) => {
+    const days = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+    const months = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 
+                    'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+    
+    const dayName = days[date.getDay()];
+    const day = date.getDate();
+    const month = months[date.getMonth()];
+    const year = date.getFullYear() + 543;
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const seconds = date.getSeconds().toString().padStart(2, '0');
+    
+    return `วัน${dayName} ${day} ${month} ${year} เวลา ${hours}:${minutes}:${seconds} น.`;
+  };
+
+  const createNote = () => {
+    const newNote = {
+      id: Date.now(),
+      title: 'โน้ตใหม่',
+      content: '',
+      drawing: null,
+      createdAt: new Date().toISOString()
+    };
+    setNotes([newNote, ...notes]);
+    setSelectedNote(newNote);
+    setEditingId(newNote.id);
+    setIsTextMode(true);
+  };
+
+  const deleteNote = (id) => {
+    setNotes(notes.filter(n => n.id !== id));
+    if (selectedNote?.id === id) {
+      setSelectedNote(null);
+    }
+  };
+
+  const updateNote = (id, updates) => {
+    setNotes(notes.map(n => n.id === id ? { ...n, ...updates } : n));
+    if (selectedNote?.id === id) {
+      setSelectedNote({ ...selectedNote, ...updates });
+    }
+  };
+
+  const exportNotes = () => {
+    const dataStr = JSON.stringify(notes, null, 2);
+    const blob = new Blob([dataStr], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `notes_${Date.now()}.txt`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importNotes = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const imported = JSON.parse(event.target.result);
+          setNotes(Array.isArray(imported) ? imported : []);
+        } catch (err) {
+          alert('ไม่สามารถอ่านไฟล์ได้');
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const startDrawing = (e) => {
+    if (!contextRef.current) return;
+    const { offsetX, offsetY } = e.nativeEvent;
+    contextRef.current.strokeStyle = drawColor;
+    contextRef.current.lineWidth = drawSize;
+    contextRef.current.beginPath();
+    contextRef.current.moveTo(offsetX, offsetY);
+    setIsDrawing(true);
+  };
+
+  const draw = (e) => {
+    if (!isDrawing || !contextRef.current) return;
+    const { offsetX, offsetY } = e.nativeEvent;
+    contextRef.current.lineTo(offsetX, offsetY);
+    contextRef.current.stroke();
+  };
+
+  const stopDrawing = () => {
+    if (isDrawing && canvasRef.current) {
+      contextRef.current.closePath();
+      setIsDrawing(false);
+      const drawing = canvasRef.current.toDataURL();
+      updateNote(selectedNote.id, { drawing });
+    }
+  };
+
+  const clearCanvas = () => {
+    if (canvasRef.current && contextRef.current) {
+      contextRef.current.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+      updateNote(selectedNote.id, { drawing: null });
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-yellow-100">
+      <div className="container mx-auto p-4 max-w-7xl">
+        {/* Header */}
+        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 border-4 border-yellow-400">
+          <div className="flex justify-between items-center mb-4">
+            <h1 className="text-4xl font-bold text-yellow-600" style={{ fontFamily: 'Kanit, sans-serif' }}>
+              📝 โน้ตของฉัน
+            </h1>
+            <div className="flex gap-2">
+              <button
+                onClick={createNote}
+                className="bg-yellow-400 hover:bg-yellow-500 text-white px-4 py-2 rounded-xl flex items-center gap-2 transition-all font-semibold"
+                style={{ fontFamily: 'Kanit, sans-serif' }}
+              >
+                <Plus size={20} /> สร้างโน้ต
+              </button>
+              <button
+                onClick={exportNotes}
+                className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 transition-all font-semibold"
+                style={{ fontFamily: 'Kanit, sans-serif' }}
+              >
+                <Download size={20} /> Export
+              </button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-xl flex items-center gap-2 transition-all font-semibold"
+                style={{ fontFamily: 'Kanit, sans-serif' }}
+              >
+                <Upload size={20} /> Import
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".txt"
+                onChange={importNotes}
+                className="hidden"
+              />
+            </div>
+          </div>
+          <div className="text-center text-yellow-700 text-lg font-medium" style={{ fontFamily: 'Kanit, sans-serif' }}>
+            {formatDateTime(currentTime)}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-12 gap-6">
+          {/* Sidebar */}
+          <div className="col-span-4 bg-white rounded-2xl shadow-lg p-4 border-4 border-yellow-400 max-h-[calc(100vh-200px)] overflow-y-auto">
+            <h2 className="text-2xl font-bold text-yellow-600 mb-4" style={{ fontFamily: 'Kanit, sans-serif' }}>
+              รายการโน้ต
+            </h2>
+            {notes.length === 0 ? (
+              <p className="text-gray-400 text-center py-8" style={{ fontFamily: 'Kanit, sans-serif' }}>
+                ยังไม่มีโน้ต
+              </p>
+            ) : (
+              notes.map(note => (
+                <div
+                  key={note.id}
+                  onClick={() => {
+                    setSelectedNote(note);
+                    setEditingId(null);
+                    setIsTextMode(true);
+                  }}
+                  className={`p-4 mb-3 rounded-xl cursor-pointer transition-all border-2 ${
+                    selectedNote?.id === note.id
+                      ? 'bg-yellow-100 border-yellow-500'
+                      : 'bg-yellow-50 border-yellow-200 hover:border-yellow-400'
+                  }`}
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <h3 className="font-bold text-yellow-700 text-lg" style={{ fontFamily: 'Kanit, sans-serif' }}>
+                        {note.title}
+                      </h3>
+                      <p className="text-gray-600 text-sm truncate" style={{ fontFamily: 'Kanit, sans-serif' }}>
+                        {note.content || 'ว่างเปล่า'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteNote(note.id);
+                      }}
+                      className="text-red-500 hover:text-red-700 ml-2"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Editor */}
+          <div className="col-span-8 bg-white rounded-2xl shadow-lg p-6 border-4 border-yellow-400">
+            {selectedNote ? (
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  {editingId === selectedNote.id ? (
+                    <input
+                      type="text"
+                      value={selectedNote.title}
+                      onChange={(e) => updateNote(selectedNote.id, { title: e.target.value })}
+                      className="text-3xl font-bold text-yellow-600 border-b-2 border-yellow-400 focus:outline-none focus:border-yellow-600 flex-1"
+                      style={{ fontFamily: 'Kanit, sans-serif' }}
+                    />
+                  ) : (
+                    <h2 className="text-3xl font-bold text-yellow-600" style={{ fontFamily: 'Kanit, sans-serif' }}>
+                      {selectedNote.title}
+                    </h2>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setIsTextMode(!isTextMode)}
+                      className={`px-4 py-2 rounded-xl flex items-center gap-2 transition-all font-semibold ${
+                        isTextMode ? 'bg-yellow-400 text-white' : 'bg-gray-200 text-gray-700'
+                      }`}
+                      style={{ fontFamily: 'Kanit, sans-serif' }}
+                    >
+                      <Type size={20} /> ข้อความ
+                    </button>
+                    <button
+                      onClick={() => setIsTextMode(!isTextMode)}
+                      className={`px-4 py-2 rounded-xl flex items-center gap-2 transition-all font-semibold ${
+                        !isTextMode ? 'bg-yellow-400 text-white' : 'bg-gray-200 text-gray-700'
+                      }`}
+                      style={{ fontFamily: 'Kanit, sans-serif' }}
+                    >
+                      <Palette size={20} /> วาดรูป
+                    </button>
+                    {editingId === selectedNote.id ? (
+                      <button
+                        onClick={() => setEditingId(null)}
+                        className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-xl flex items-center gap-2"
+                      >
+                        <Save size={20} />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setEditingId(selectedNote.id)}
+                        className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-xl flex items-center gap-2"
+                      >
+                        <Edit2 size={20} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {isTextMode ? (
+                  <textarea
+                    value={selectedNote.content}
+                    onChange={(e) => updateNote(selectedNote.id, { content: e.target.value })}
+                    readOnly={editingId !== selectedNote.id}
+                    className="w-full h-[calc(100vh-400px)] p-4 border-2 border-yellow-200 rounded-xl focus:outline-none focus:border-yellow-400 resize-none text-gray-700"
+                    style={{ fontFamily: 'Kanit, sans-serif' }}
+                    placeholder="เขียนโน้ตที่นี่..."
+                  />
+                ) : (
+                  <div>
+                    <div className="mb-4 flex gap-4 items-center">
+                      <label className="font-semibold text-yellow-700" style={{ fontFamily: 'Kanit, sans-serif' }}>
+                        สี:
+                      </label>
+                      <input
+                        type="color"
+                        value={drawColor}
+                        onChange={(e) => setDrawColor(e.target.value)}
+                        className="w-12 h-12 rounded-lg cursor-pointer border-2 border-yellow-400"
+                      />
+                      <label className="font-semibold text-yellow-700" style={{ fontFamily: 'Kanit, sans-serif' }}>
+                        ขนาด:
+                      </label>
+                      <input
+                        type="range"
+                        min="1"
+                        max="20"
+                        value={drawSize}
+                        onChange={(e) => setDrawSize(e.target.value)}
+                        className="w-32"
+                      />
+                      <span className="text-yellow-700 font-semibold" style={{ fontFamily: 'Kanit, sans-serif' }}>
+                        {drawSize}px
+                      </span>
+                      <button
+                        onClick={clearCanvas}
+                        className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 ml-auto font-semibold"
+                        style={{ fontFamily: 'Kanit, sans-serif' }}
+                      >
+                        <X size={20} /> ล้าง
+                      </button>
+                    </div>
+                    <canvas
+                      ref={canvasRef}
+                      width={800}
+                      height={500}
+                      onMouseDown={startDrawing}
+                      onMouseMove={draw}
+                      onMouseUp={stopDrawing}
+                      onMouseLeave={stopDrawing}
+                      className="border-4 border-yellow-300 rounded-xl cursor-crosshair bg-white"
+                    />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-[calc(100vh-400px)] text-gray-400">
+                <div className="text-center">
+                  <p className="text-2xl mb-4" style={{ fontFamily: 'Kanit, sans-serif' }}>
+                    เลือกโน้ตหรือสร้างโน้ตใหม่
+                  </p>
+                  <button
+                    onClick={createNote}
+                    className="bg-yellow-400 hover:bg-yellow-500 text-white px-6 py-3 rounded-xl flex items-center gap-2 mx-auto transition-all font-semibold text-lg"
+                    style={{ fontFamily: 'Kanit, sans-serif' }}
+                  >
+                    <Plus size={24} /> สร้างโน้ตใหม่
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
